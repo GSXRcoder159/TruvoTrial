@@ -1,58 +1,90 @@
+const API_KEY = 'bo5mKCRexh9L5YlTM1xF55ABg7rUEAzB7p1boYP4';
+const DATA_URL = 'https://api.nationalflooddata.com/v3/data';
+const TILE_URL = 'https://api.nationalflooddata.com/v3/tiles/flood-vector/{z}/{x}/{y}.mvt';
+
+const ZONE_COLORS = {
+    'A': '#ffcccc',
+    'AE': '#ff9999',
+    'AH': '#ff6666',
+    'AO': '#ff3333',
+    'AR': '#ff0000',
+    'V': '#ccffff',
+    'VE': '#99ffff',
+    'X': '#cccccc',
+    'D': '#999999',
+};
+
+let map = null;
+let marker = null;
+let floodLayer = null;
+
 /**
- * Given a free‑form address (no punctuation), return the top flood‑zone code (e.g. "AE","X") or null.
- * @param {string} address — e.g. "500 S State St Ann Arbor MI 48109 USA"
- * @returns {Promise<string|null>}
+ * Given an address, return the object containing flood zone information.
+ * @param {string} address
+ * @returns {Promise<Object|null>}
  */
-async function checkFloodZone(address) {
-  const url = new URL('https://api.nationalflooddata.com/v3/data');                             // :contentReference[oaicite:15]{index=15}
-  url.searchParams.set('searchtype', 'addressparcel');                                          // :contentReference[oaicite:16]{index=16}
-  url.searchParams.set('address', address.replace(/[.,]/g, ''));
+async function checkFloodZoneByAddress(address) {
+    const url = new URL(DATA_URL);
+    url.searchParams.set('searchtype', 'addressparcel');
+    url.searchParams.set('address', address.replace(/[.,]/g, ''));
 
-  const res = await fetch(url, {
-    headers: { 'X-API-KEY': 'bo5mKCRexh9L5YlTM1xF55ABg7rUEAzB7p1boYP4' }
-  });
-  if (!res.ok) throw new Error(`Flood API error ${res.status}`);
+    const res = await fetch(url, {
+        headers: { 'X-API-KEY': API_KEY },
+    });
+    if (!res.ok) {
+        throw new Error(`Flood API error ${res.status}`);
+    }
 
-  const data = await res.json();
-  if (data.status !== 'OK' || !data.result) return null;                                       // :contentReference[oaicite:17]{index=17}
+    return res.json();
+}
 
-  const zones = data.result['flood.s_fld_haz_ar'];                                             // :contentReference[oaicite:18]{index=18}
-  if (!Array.isArray(zones) || zones.length === 0) return null;
-  const top = zones[0];
-  return typeof top.fld_zone === 'string' ? top.fld_zone : null;
+function addFloodVectorTiles() {
+    floodLayer = L.vectorGrid.protobuf(TILE_URL, {
+        vectorTileLayerStyles: {
+            flood: f => ({
+                fill: true,
+                fillColor: ZONE_COLORS[f.properties.fld_zone] || '#888',
+                fillOpacity: 0.3,
+                stroke: true,
+                color: '#333',
+                weight: 0.3,
+            })
+        },
+        interactive: true,
+        getFeatureId: f => f.properties.fld_ar_id,
+        maxNativeZoom: 14,
+        maxZoom: 22,
+        fetchOptions: { headers: { 'X-API-KEY': API_KEY } },
+    }).addTo(map);
+}
+
+/**
+ * Display the flood zone for a given address in the result box.
+ * @param {string} content
+ * @returns {void}
+ */
+function showResult(content) {
+    const box = document.getElementById('result');
+    box.style.display = 'block';
+    box.innerHTML = content;
 }
 
 async function initFloodMap() {
-    // 1. Create base map centered on the contiguous US
-    const map = L.map('map').setView([29.9511, -90.0715], 4);                                   // :contentReference[oaicite:22]{index=22}
+    // create the map
+    map = L.map('map').setView([38.89399, -77.03659], 5);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors'
+        maxZoom: 19,
+        attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
-    // 2. Overlay FEMA flood‑zone vector tiles
-    const floodLayer = L.vectorGrid.protobuf(
-    'https://api.nationalflooddata.com/v3/tiles/flood-vector/{z}/{x}/{y}.mvt', {
-        vectorTileLayerStyles: {
-        // style by zone code: fillOpacity varies by risk
-        flood: (properties, zoom) => ({
-            fill: true,
-            fillOpacity: properties.fld_zone.startsWith('A') ? 0.5 : 0.2,
-            color: '#003366', weight: 1
-        })
-        },
-        interactive: true,
-        getFeatureId: feat => feat.properties.fld_ar_id,
-        // include API key header on tile requests
-        // fetchOptions: { headers: { 'X-API-KEY': 'bo5mKCRexh9L5YlTM1xF55ABg7rUEAzB7p1boYP4' } }, // :contentReference[oaicite:9]{index=9}
-        updateWhenIdle: true,       // only load after pan ends :contentReference[oaicite:10]{index=10}
-        updateInterval: 200,        // 200 ms debounce on move :contentReference[oaicite:11]{index=11}
-        minZoom: 5,                 // lower‐res workaround :contentReference[oaicite:12]{index=12}
-        maxNativeZoom: 5,
-        maxConcurrentRequests: 1    // limit to one tile at a time for testing
-    }
-    ).addTo(map);
+    // overlay the flood‑zone vector tiles
+    addFloodVectorTiles();
 
-    // 3. Popup on click shows zone code
+    // add legend
+    const legend = document.getElementById('legend');
+    legend.innerHTML = Object.entries(ZONE_COLORS).map(([z,c])=>`<div><span class="color-box" style="background:${c}"></span>${z}</div>`).join('');
+
+    // show flood zone on click
     floodLayer.on('click', e => {
     const z = e.layer.properties.fld_zone;
     L.popup()
@@ -61,24 +93,36 @@ async function initFloodMap() {
         .openOn(map);
     });
 
-    // 4. Expose a global helper for ad‑hoc lookups
-//   window.checkFloodZone = async addr => {
-//     try {
-//       const zone = await checkFloodZone(addr);
-//       if (!zone) return alert('No flood zone found.');
-//       // pan & annotate
-//       const { latitude: lat, longitude: lng } = (await fetch(
-//         `https://api.nationalflooddata.com/v3/data?searchtype=addresscoord&address=${encodeURIComponent(addr.replace(/[.,]/g,''))}`,
-//         { headers: { 'X-API-KEY': 'bo5mKCRexh9L5YlTM1xF55ABg7rUEAzB7p1boYP4' }}
-//       ).then(r => r.json())).geocode;                                                         // :contentReference[oaicite:23]{index=23}
-//       map.setView([lat, lng], 14);
-//       L.marker([lat, lng]).addTo(map)
-//         .bindPopup(`Flood Zone: ${zone}`)
-//         .openPopup();
-//     } catch (err) {
-//       alert(`Lookup failed: ${err.message}`);
-//     }
-//   };
+    // search by address
+    const searchButton = document.getElementById('checkBtn');
+    searchButton.onclick = async () => {
+        const address = document.getElementById('addr').value.trim();
+        if (!address) {
+            alert('Please enter an address.');
+            return;
+        }
+        try {
+            const data = await checkFloodZoneByAddress(address);
+            const zone = data?.result?.['flood.s_fld_haz_ar']?.[0]?.fld_zone || "UNKNOWN";
+            const sfha = data?.result?.['flood.s_fld_haz_ar']?.[0]?.sfha_tf === 'T';
+            const coords = data?.coords || data?.geocode;
+            if (coords) {
+                if (marker) {
+                    marker.setLatLng([coords.lat, coords.lng]);
+                } else {
+                    marker = L.marker([coords.lat, coords.lng]).addTo(map);
+                }
+                map.setView([coords.lat, coords.lng], 16);
+            }
+            showResult(`<strong>Zone:</strong> ${zone} ${sfha ? '(SFHA)' : ''}`);
+            if (zone in ZONE_COLORS) {
+                marker.getElement().style.backgroundColor = ZONE_COLORS[zone];
+            }
+        } catch (err) {
+            console.error(err);
+            showResult('Error: ' + err.message);
+        }
+    };
 }
 
-    // initFloodMap();
+initFloodMap();
