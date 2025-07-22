@@ -1,9 +1,4 @@
-/**
- * Flood Zone Checker Application
- * A comprehensive tool for checking flood zones in the US using National Flood Data API
- */
-
-// Configuration constants
+// Constants
 const CONFIG = {
     API_KEY: 'bo5mKCRexh9L5YlTM1xF55ABg7rUEAzB7p1boYP4',
     DATA_URL: 'https://api.nationalflooddata.com/v3/data',
