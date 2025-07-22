@@ -3,40 +3,54 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Flood Zone Demo</title>
-  <!-- Leaflet -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Mapbox GL + Vector tiles to render NFD tiles optionally -->
-  <script src="https://unpkg.com/mapbox-gl@2.15.0/dist/mapbox-gl.js"></script>
-  <link href="https://unpkg.com/mapbox-gl@2.15.0/dist/mapbox-gl.css" rel="stylesheet" />
-  <!-- Leaflet.VectorGrid for MVT rendering -->
-  <script src="https://unpkg.com/leaflet.vectorgrid@1.3.0/dist/Leaflet.VectorGrid.bundled.js"></script>
-  <style>
-    html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
-    #app { height: 100%; display: grid; grid-template-rows: auto 1fr; }
-    header { padding: .5rem .75rem; background:#0d3b66; color:#fff; font-size:1rem; }
-    #controls { display:flex; gap:.5rem; padding:.5rem; background:#f5f5f5; border-bottom:1px solid #ddd; flex-wrap:wrap; align-items:center; }
-    #map { width:100%; height:100%; min-height: 100vh; }
-    input[type=text]{ flex:1 1 260px; padding:.35rem .5rem; font-size:.9rem; }
-    button{ padding:.4rem .7rem; cursor:pointer; }
-    #result{ padding:.4rem .7rem; font-size:.85rem; background:#fff; border-left:4px solid #0d3b66; max-width:480px; box-shadow:0 1px 3px rgba(0,0,0,.1); position:absolute; z-index:999; top:90px; left:10px; }
-    .legend{ position:absolute; bottom:10px; left:10px; background:#fff; padding:.5rem; font-size:.7rem; box-shadow:0 1px 3px rgba(0,0,0,.3); }
-    .legend div{ margin-bottom:2px; }
-    .color-box{ display:inline-block; width:12px; height:12px; margin-right:4px; vertical-align:middle; }
-  </style>
+  <meta name="description" content="Check flood zones for any US address using National Flood Data" />
+  <title>US Flood Zone Checker</title>
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
+        crossorigin="" />
+  
+  <!-- Custom styles -->
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<div id="app">
-  <header>Flood Zone Checker Demo</header>
-  <div id="controls">
-    <input id="addr" type="text" placeholder="123 Main St, City, ST 12345" />
-    <button id="checkBtn">Check Flood Zone</button>
+  <div id="app">
+    <header>
+      <h1>🌊 US Flood Zone Checker</h1>
+    </header>
+    
+    <div id="controls">
+      <input 
+        id="addr" 
+        type="text" 
+        placeholder="Enter address (e.g., 123 Main St, City, ST 12345)" 
+        aria-label="Enter address to check flood zone"
+        autocomplete="street-address"
+      />
+      <button 
+        id="checkBtn" 
+        type="button"
+        aria-label="Check flood zone for entered address"
+      >
+        Check Flood Zone
+      </button>
+    </div>
+    
+    <div id="map" role="application" aria-label="Interactive flood zone map"></div>
+    
+    <div id="result" style="display:none" role="alert" aria-live="polite"></div>
+    
+    <div class="legend" id="legend" role="complementary" aria-label="Flood zone legend"></div>
   </div>
-  <div id="map"></div>
-  <div id="result" style="display:none"></div>
-  <div class="legend" id="legend"></div>
-</div>
+
+  <!-- External Scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" 
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" 
+          crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.vectorgrid@1.3.0/dist/Leaflet.VectorGrid.bundled.js"></script>
+  
+  <!-- Application Script -->
   <script src="app.js"></script>
 </body>
 </html>
