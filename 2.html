@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flood Zone Demo</title>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Mapbox GL + Vector tiles to render NFD tiles optionally -->
+  <script src="https://unpkg.com/mapbox-gl@2.15.0/dist/mapbox-gl.js"></script>
+  <link href="https://unpkg.com/mapbox-gl@2.15.0/dist/mapbox-gl.css" rel="stylesheet" />
+  <!-- Leaflet.VectorGrid for MVT rendering -->
+  <script src="https://unpkg.com/leaflet.vectorgrid@1.3.0/dist/Leaflet.VectorGrid.bundled.js"></script>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
+    #app { height: 100%; display: grid; grid-template-rows: auto 1fr; }
+    header { padding: .5rem .75rem; background:#0d3b66; color:#fff; font-size:1rem; }
+    #controls { display:flex; gap:.5rem; padding:.5rem; background:#f5f5f5; border-bottom:1px solid #ddd; flex-wrap:wrap; align-items:center; }
+#map { width:100%; height:100%; min-height: 100vh; }
+    input[type=text]{ flex:1 1 260px; padding:.35rem .5rem; font-size:.9rem; }
+    button{ padding:.4rem .7rem; cursor:pointer; }
+    #result{ padding:.4rem .7rem; font-size:.85rem; background:#fff; border-left:4px solid #0d3b66; max-width:480px; box-shadow:0 1px 3px rgba(0,0,0,.1); position:absolute; z-index:999; top:90px; left:10px; }
+    .legend{ position:absolute; bottom:10px; left:10px; background:#fff; padding:.5rem; font-size:.7rem; box-shadow:0 1px 3px rgba(0,0,0,.3); }
+    .legend div{ margin-bottom:2px; }
+    .color-box{ display:inline-block; width:12px; height:12px; margin-right:4px; vertical-align:middle; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header>Flood Zone Checker Demo</header>
+  <div id="controls">
+    <input id="addr" type="text" placeholder="123 Main St, City, ST 12345" />
+    <button id="checkBtn">Check Flood Zone</button>
+    <button id="useMapBtn" title="Use clicked map point">Use map point</button>
+  </div>
+  <div id="map"></div>
+  <div id="result" style="display:none"></div>
+  <div class="legend" id="legend"></div>
+</div>
+
+<script>
+// ------------------ CONFIG ------------------ //
+// Add your keys here (or inject via env/secret manager in real app)
+const NFD_API_KEY = "bo5mKCRexh9L5YlTM1xF55ABg7rUEAzB7p1boYP4"; // required for NationalFloodData
+// FEMA NFHL ArcGIS REST doesn't need a key
+
+// Endpoints
+const NFD_DATA_URL = "https://api.nationalflooddata.com/v3/data"; // address/coord lookup
+const NFD_VECTOR_TILE_URL = `https://api.nationalflooddata.com/v3/tiles/flood-vector/{z}/{x}/{y}.mvt`;
+const FEMA_NFHL_QUERY = "https://hazards.fema.gov/gis/nfhl/rest/services/public/NFHL/MapServer/28/query"; // s_fld_haz_ar layer
+
+// Colors for FEMA flood zones
+const ZONE_COLORS = {
+  "AE":"#d7191c","A":"#fdae61","AH":"#f46d43","AO":"#fee08b","VE":"#2c7bb6","V":"#abd9e9","X":"#1a9641","X500":"#66bd63","D":"#cccccc","AR":"#f1b6da","A99":"#fddbc7"
+};
+
+// ------------------ MAP ------------------ //
+const map = L.map('map').setView([38.89399, -77.03659], 5); // USA center-ish
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+let marker = null;
+let floodLayer = null;
+
+map.on('click', e => {
+  const {lat, lng} = e.latlng;
+  if(marker){ marker.setLatLng(e.latlng); } else { marker = L.marker(e.latlng).addTo(map); }
+  lastClicked = e.latlng;
+});
+
+// Vector tile overlay from NationalFloodData (fast, all states). Requires API key.
+function addNfdVectorTiles(){
+  if(!NFD_API_KEY){ console.warn('No NFD key set, skipping vector tiles'); return; }
+  floodLayer = L.vectorGrid.protobuf(NFD_VECTOR_TILE_URL, {
+    vectorTileLayerStyles: {
+      // Layer name inside the tile might be 'flood'
+      flood: f => ({
+        fill: true,
+        fillColor: ZONE_COLORS[f.properties.fld_zone] || '#888',
+        fillOpacity: 0.35,
+        stroke: true,
+        color: '#333',
+        weight: 0.3
+      })
+    },
+    getFeatureId: f => f.properties.fld_ar_id,
+    maxNativeZoom: 14,
+    maxZoom: 22,
+    fetchOptions: { headers: { 'X-API-KEY': NFD_API_KEY } },
+  }).addTo(map);
+}
+addNfdVectorTiles();
+
+// Legend
+const legendEl = document.getElementById('legend');
+legendEl.innerHTML = Object.entries(ZONE_COLORS).map(([z,c])=>`<div><span class="color-box" style="background:${c}"></span>${z}</div>`).join('');
+
+// ------------------ LOOKUP FUNCTIONS ------------------ //
+async function checkByAddress(address){
+  const params = new URLSearchParams({ searchtype: 'addresscoord', address, loma: false });
+  const res = await fetch(`${NFD_DATA_URL}?${params.toString()}`, {
+    headers: { 'x-api-key': NFD_API_KEY }
+  });
+  if(!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+async function checkByCoord(lat, lng){
+  // Hitting FEMA NFHL directly (no key). Layer 28 = S_FLD_HAZ_AR
+  const params = new URLSearchParams({
+    f: 'json',
+    returnGeometry: false,
+    spatialRel: 'esriSpatialRelIntersects',
+    geometry: JSON.stringify({x: lng, y: lat, spatialReference:{wkid:4326}}),
+    geometryType: 'esriGeometryPoint',
+    outFields: 'FLD_ZONE,ZONE_SUBTY,SFHA_TF,DFIRM_ID'
+  });
+  const url = `${FEMA_NFHL_QUERY}?${params.toString()}`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return data.features?.[0]?.attributes || null;
+}
+
+function showResult(payload){
+  const box = document.getElementById('result');
+  box.style.display = 'block';
+  box.innerHTML = payload;
+}
+
+// UI events
+let lastClicked = null;
+
+document.getElementById('checkBtn').onclick = async ()=>{
+  const addr = document.getElementById('addr').value.trim();
+  if(!addr) return alert('Enter an address');
+  try{
+    const data = await checkByAddress(addr);
+    const zone = data?.result?.['flood.s_fld_haz_ar']?.[0]?.fld_zone || 'UNKNOWN';
+    const sfha = data?.result?.['flood.s_fld_haz_ar']?.[0]?.sfha_tf === 'T';
+    const coords = data?.coords || data?.geocode;
+    if(coords){
+      if(marker){ marker.setLatLng([coords.lat, coords.lng]); } else { marker = L.marker([coords.lat, coords.lng]).addTo(map); }
+      map.setView([coords.lat, coords.lng], 16);
+    }
+    showResult(`<strong>Zone:</strong> ${zone} ${sfha ? '(SFHA)' : ''}`);
+  }catch(err){
+    console.error(err); showResult('Error: '+ err.message);
+  }
+};
+
+document.getElementById('useMapBtn').onclick = async ()=>{
+  if(!lastClicked){ return alert('Click map first'); }
+  const {lat,lng} = lastClicked;
+  try{
+    const attrs = await checkByCoord(lat,lng);
+    if(!attrs){ showResult('No flood polygon found at that point.'); return; }
+    showResult(`<strong>Zone:</strong> ${attrs.FLD_ZONE} ${attrs.SFHA_TF==='T' ? '(SFHA)' : ''}`);
+  }catch(err){ console.error(err); showResult('Error: '+ err.message); }
+};
+</script>
+</body>
+</html>

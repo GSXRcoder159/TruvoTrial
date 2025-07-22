@@ -24,7 +24,7 @@ async function checkFloodZone(address) {
 
 async function initFloodMap() {
     // 1. Create base map centered on the contiguous US
-    const map = L.map('map').setView([29.9511, -90.0715], 8);                                   // :contentReference[oaicite:22]{index=22}
+    const map = L.map('map').setView([29.9511, -90.0715], 4);                                   // :contentReference[oaicite:22]{index=22}
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap contributors'
     }).addTo(map);
@@ -46,8 +46,9 @@ async function initFloodMap() {
         // fetchOptions: { headers: { 'X-API-KEY': 'bo5mKCRexh9L5YlTM1xF55ABg7rUEAzB7p1boYP4' } }, // :contentReference[oaicite:9]{index=9}
         updateWhenIdle: true,       // only load after pan ends :contentReference[oaicite:10]{index=10}
         updateInterval: 200,        // 200 ms debounce on move :contentReference[oaicite:11]{index=11}
-        minZoom: 8,                 // lower‐res workaround :contentReference[oaicite:12]{index=12}
-        maxNativeZoom: 8
+        minZoom: 5,                 // lower‐res workaround :contentReference[oaicite:12]{index=12}
+        maxNativeZoom: 5,
+        maxConcurrentRequests: 1    // limit to one tile at a time for testing
     }
     ).addTo(map);
 
